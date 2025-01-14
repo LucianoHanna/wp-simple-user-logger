@@ -28,6 +28,10 @@ All logs are stored in a file within the WordPress uploads directory.
 2. Activate the plugin through the 'Plugins' menu in WordPress
 3. Logs will automatically be created in your uploads directory
 
+== Filebeat Integration ==
+
+The plugin provides a sample Filebeat configuration file (filebeat-configuration-example.yaml) preconfigured to ship logs to Elasticsearch. The configuration includes proper parsing for all logged activities, field mappings, and event categorization.
+
 == Changelog ==
 
 = 1.0.0 =

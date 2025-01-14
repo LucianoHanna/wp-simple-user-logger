@@ -1,0 +1,123 @@
+inputs:
+  - id: logfile-wordpress-user-activities
+    name: wordpress-user-logs
+    revision: 1
+    type: filestream
+    use_output: default
+    data_stream:
+      namespace: default
+    streams:
+      - id: wordpress-user-activities-stream
+        data_stream:
+          dataset: wordpress.user_activities
+          type: logs
+        paths:
+          - /var/www/html/wp-content/uploads/user-activities.log
+        exclude_files:
+          - .gz$
+        parsers:
+          - multiline:
+              type: pattern
+              pattern: '^\[\d{4}-\d{2}-\d{2}'
+              negate: true
+              match: after
+
+        processors:
+          # Dissect commons fields
+          - dissect:
+              tokenizer: '[%{timestamp_file}] IP: %{source.ip} - URI: %{url.original} - User-Agent: %{user_agent.original} - Action: %{raw_action} - %{additional_details}'
+              field: message
+              target_prefix: ""
+              trim_values: all
+
+          # LOGIN_SUCCESS
+          - dissect:
+              if: ctx.raw_action == 'LOGIN_SUCCESS'
+              tokenizer: 'User: %{user.name} - ID: %{user.id} - Display Name: %{user.full_name} - Email: %{user.email} - Roles: %{user.roles}'
+              field: additional_details
+              target_prefix: ""
+              trim_values: all
+
+          # LOGIN_FAILED
+          - dissect:
+              if: ctx.raw_action == 'LOGIN_FAILED'
+              tokenizer: 'Username: %{user.name}'
+              field: additional_details
+              target_prefix: ""
+              trim_values: all
+
+          # USER_CREATED
+          - dissect:
+              if: ctx.raw_action == 'USER_CREATED'
+              tokenizer: 'ID: %{user.id} - Login: %{user.name} - Email: %{user.email} - Roles: %{user.roles} - Created By: %{creator.name} - Creator ID: %{creator.id}'
+              field: additional_details
+              target_prefix: ""
+              trim_values: all
+
+          # USER_UPDATED
+          - dissect:
+              if: ctx.raw_action == 'USER_UPDATED'
+              tokenizer: 'ID: %{user.id} - Login: %{user.name} - Changes: %{changes} - Updated By: %{editor.name} - Editor ID: %{editor.id}'
+              field: additional_details
+              target_prefix: ""
+              trim_values: all
+
+          # ROLE_CHANGED
+          - dissect:
+              if: ctx.raw_action == 'ROLE_CHANGED'
+              tokenizer: 'User: %{user.name} - ID: %{user.id} - Old Roles: %{old_roles} - New Role: %{new_role} - Changed By: %{editor.name} - Editor ID: %{editor.id}'
+              field: additional_details
+              target_prefix: ""
+              trim_values: all
+
+          # PASSWORD_RESET_REQUESTED
+          - dissect:
+              if: ctx.raw_action == 'PASSWORD_RESET_REQUESTED'
+              tokenizer: 'User: %{user.name}'
+              field: additional_details
+              target_prefix: ""
+              trim_values: all
+
+          # PASSWORD_RESET_SUCCESS
+          - dissect:
+              if: ctx.raw_action == 'PASSWORD_RESET_SUCCESS'
+              tokenizer: 'User: %{user.name} - ID: %{user.id}'
+              field: additional_details
+              target_prefix: ""
+              trim_values: all
+
+          # USER_DELETED
+          - dissect:
+              if: ctx.raw_action == 'USER_DELETED'
+              tokenizer: 'ID: %{user.id} - Reassigned To: %{reassigned_to} - Deleted By: %{deleter.name} - Deleter ID: %{deleter.id}'
+              field: additional_details
+              target_prefix: ""
+              trim_values: all
+          
+          - add_fields:
+              when: 
+                or:
+                  - equals:
+                      raw_action: 'LOGIN_SUCCESS'
+                  - equals:
+                      raw_action: 'LOGIN_FAILED'
+              target: "event"
+              fields:
+                category: "authentication"
+                action: "wordpress_login"
+
+          - add_fields:
+              when: 
+                equals: 
+                  raw_action: 'LOGIN_SUCCESS'
+              target: "event"
+              fields:
+                outcome: "success"
+
+          - add_fields:
+              when: 
+                equals: 
+                  raw_action: 'LOGIN_FAILED'
+              target: "event"
+              fields:
+                outcome: "failure"
